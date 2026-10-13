@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pychain explorer</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1b1f24; --muted: #66707c; --line: #e2e5e9;
+    --accent: #2f6fde; --accent-soft: #e6eefc; --good: #1a7f4b; --bad: #c0392b;
+    --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #181c22; --text: #e6e9ed; --muted: #8b95a1; --line: #2a3038;
+      --accent: #6b9cff; --accent-soft: #1d2a44; --good: #3ecf8e; --bad: #ff6b5b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 14px; margin-left: 8px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  .mono { font-family: var(--mono); }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 20px 0; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .side { display: grid; gap: 16px; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+           background: var(--accent); color: #fff; font-weight: 600; }
+  button:disabled { opacity: .6; cursor: wait; }
+  input { font: inherit; width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line);
+          background: var(--bg); color: var(--text); font-family: var(--mono); font-size: 12px; }
+  .block { border-top: 1px solid var(--line); }
+  .block:first-of-type { border-top: 0; }
+  .block summary { list-style: none; cursor: pointer; padding: 10px 0; display: grid;
+                   grid-template-columns: 60px 1fr auto; gap: 12px; align-items: center; }
+  .block summary::-webkit-details-marker { display: none; }
+  .height { font-weight: 700; color: var(--accent); }
+  .hash { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .detail { padding: 0 0 14px; display: grid; gap: 8px; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 12px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: var(--mono); word-break: break-all; }
+  .tx { display: grid; grid-template-columns: 1fr auto 1fr; gap: 4px 8px; align-items: center;
+        font-size: 12px; padding: 6px 8px; background: var(--bg); border-radius: 6px; }
+  .tx-meta { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: 11px; }
+  .side-col { display: grid; gap: 2px; min-width: 0; }
+  .side-col > div { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+  .tx .addr { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .tx .addr:hover { color: var(--accent); }
+  .tx .amt { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .reward { color: var(--good); }
+  #chart { width: 100%; height: 120px; display: block; }
+  .peer { font-family: var(--mono); font-size: 12px; }
+  .peer a { color: var(--accent); }
+  #error { color: var(--bad); }
+  .empty { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>pychain explorer<span id="node" class="mono"></span></h1>
+    <div><span id="error"></span> <button id="mine">Mine a block</button></div>
+  </header>
+
+  <section class="stats">
+    <div class="card stat"><div class="label">Height</div><div class="value" id="s-height">–</div></div>
+    <div class="card stat"><div class="label">Next difficulty</div><div class="value" id="s-diff">–</div></div>
+    <div class="card stat"><div class="label">Avg block time (last 10)</div><div class="value" id="s-time">–</div></div>
+    <div class="card stat"><div class="label">Total work</div><div class="value" id="s-work">–</div></div>
+    <div class="card stat"><div class="label">Pending txs</div><div class="value" id="s-pending">–</div></div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Latest blocks</h2>
+      <div id="blocks"></div>
+    </section>
+
+    <div class="side">
+      <section class="card">
+        <h2>Difficulty (bits) per block</h2>
+        <svg id="chart" preserveAspectRatio="none"></svg>
+        <div class="muted" id="chart-note" style="font-size:12px"></div>
+      </section>
+      <section class="card">
+        <h2>Address lookup</h2>
+        <input id="addr" placeholder="paste an address, or click one in a block" spellcheck="false">
+        <dl id="addr-result" style="margin-top:10px"></dl>
+      </section>
+      <section class="card">
+        <h2>Pending</h2>
+        <div id="pending"></div>
+      </section>
+      <section class="card">
+        <h2>Peers</h2>
+        <div id="peers"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const short = (s, n = 10) => (s && s.length > 2 * n + 1 ? `${s.slice(0, n)}…${s.slice(-6)}` : s ?? "");
+const open = new Set();  // keep expanded blocks expanded across refreshes
+let lastTip = null;
+
+function el(tag, props = {}, ...children) {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  for (const c of children) e.append(c);
+  return e;
+}
+
+async function get(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.json();
+}
+
+let outputs = new Map();  // "txid:index" -> output, so inputs can show where coins came from
+
+function indexOutputs(chain, pending) {
+  outputs = new Map();
+  const add = (tx, id) => tx.outputs.forEach((o, n) => outputs.set(`${id}:${n}`, o));
+  chain.forEach((b) => b.transactions.forEach((tx, i) => add(tx, b.txids[i])));
+  pending.pending.forEach((tx, i) => add(tx, pending.txids[i]));
+}
+
+function addr(a) {
+  const s = el("span", { className: "addr", textContent: short(a), title: a });
+  s.onclick = () => { $("addr").value = a; lookup(); };
+  return s;
+}
+
+function txRow(tx, id) {
+  const isCoinbase = tx.inputs.length === 0;
+  const ins = tx.inputs.map((i) => outputs.get(`${i.txid}:${i.index}`));
+  const totalIn = ins.reduce((s, o) => s + (o?.amount ?? 0), 0);
+  const totalOut = tx.outputs.reduce((s, o) => s + o.amount, 0);
+  const left = el("div", { className: "side-col" },
+    ...(isCoinbase
+      ? [el("span", { className: "reward", textContent: "⛏ new coins (reward + fees)" })]
+      : ins.map((o) => el("div", {}, o ? addr(o.address) : el("span", { textContent: "?" }),
+                          el("span", { className: "amt", textContent: ` ${o?.amount ?? ""}` })))));
+  const right = el("div", { className: "side-col" },
+    ...tx.outputs.map((o) => el("div", {}, addr(o.address),
+                                el("span", { className: "amt" + (isCoinbase ? " reward" : ""), textContent: ` ${o.amount}` }))));
+  const meta = el("div", { className: "tx-meta muted" },
+    el("span", { className: "mono", textContent: `txid ${short(id, 8)}`, title: id }),
+    isCoinbase ? "" : el("span", { textContent: `fee ${totalIn - totalOut}` }));
+  return el("div", { className: "tx" }, meta, left, el("span", { className: "muted arrow", textContent: "→" }), right);
+}
+
+function renderBlocks(chain) {
+  const box = $("blocks");
+  box.replaceChildren();
+  for (const b of chain.slice().reverse().slice(0, 50)) {
+    const d = el("details", { className: "block", open: open.has(b.index) });
+    d.ontoggle = () => (d.open ? open.add(b.index) : open.delete(b.index));
+    const when = b.index === 0 ? "genesis" : new Date(b.timestamp * 1000).toLocaleTimeString();
+    d.append(
+      el("summary", {},
+        el("span", { className: "height", textContent: `#${b.index}` }),
+        el("span", { className: "hash", textContent: b.hash, title: b.hash }),
+        el("span", { className: "pill", textContent: `${b.transactions.length} tx · ${b.difficulty} bits` })),
+      el("div", { className: "detail" },
+        el("dl", {}, ...[["time", when], ["prev", b.prev_hash], ["merkle root", b.merkle_root],
+                         ["nonce", b.nonce], ["difficulty", `${b.difficulty} leading zero bits`]]
+          .flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })])),
+        ...b.transactions.map((tx, i) => txRow(tx, b.txids[i]))));
+    box.append(d);
+  }
+}
+
+function renderChart(chain) {
+  const svg = $("chart");
+  const blocks = chain.slice(1).slice(-60);
+  svg.replaceChildren();
+  if (!blocks.length) { $("chart-note").textContent = "no blocks mined yet"; return; }
+  const max = Math.max(...blocks.map((b) => b.difficulty));
+  const W = 300, H = 100, w = W / blocks.length;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  blocks.forEach((b, i) => {
+    const h = Math.max(2, (b.difficulty / max) * (H - 4));
+    const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    Object.entries({ x: i * w + 0.5, y: H - h, width: Math.max(1, w - 1), height: h, rx: 1, fill: "var(--accent)" })
+      .forEach(([k, v]) => r.setAttribute(k, v));
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "title");
+    t.textContent = `#${b.index}: ${b.difficulty} bits`;
+    r.append(t);
+    svg.append(r);
+  });
+  $("chart-note").textContent = `last ${blocks.length} blocks · range ${Math.min(...blocks.map((b) => b.difficulty))}–${max} bits`;
+}
+
+async function lookup() {
+  const a = $("addr").value.trim();
+  const out = $("addr-result");
+  if (!a) return out.replaceChildren();
+  try {
+    const enc = encodeURIComponent(a);
+    const [r, { utxos }] = await Promise.all([get(`/balance/${enc}`), get(`/utxos/${enc}`)]);
+    out.replaceChildren(el("dt", { textContent: "confirmed" }), el("dd", { textContent: r.balance }),
+                        el("dt", { textContent: "available" }), el("dd", { textContent: r.available }),
+                        el("dt", { textContent: "unspent coins" }),
+                        el("dd", { textContent: utxos.length ? utxos.map((u) => u.amount).join(" + ") : "none" }));
+  } catch (e) { out.replaceChildren(el("dd", { textContent: e.message })); }
+}
+
+async function refresh() {
+  try {
+    const [status, { chain }, pool] = await Promise.all([get("/status"), get("/chain"), get("/pending")]);
+    const pending = pool.pending;
+    indexOutputs(chain, pool);
+    $("node").textContent = location.host;
+    $("s-height").textContent = status.height;
+    $("s-diff").textContent = `${status.next_difficulty} bits`;
+    $("s-work").textContent = status.total_work.toLocaleString();
+    $("s-pending").textContent = status.pending;
+    const recent = chain.slice(1).slice(-10);
+    $("s-time").textContent = recent.length > 1
+      ? `${((recent.at(-1).timestamp - recent[0].timestamp) / (recent.length - 1)).toFixed(1)}s / ${status.target_block_time}s`
+      : "–";
+
+    const tip = chain.at(-1).hash;
+    if (tip !== lastTip) { renderBlocks(chain); renderChart(chain); lastTip = tip; }
+
+    $("pending").replaceChildren(...(pending.length ? pending.map((tx, i) => txRow(tx, pool.txids[i])) : [el("div", { className: "empty", textContent: "nothing waiting" })]));
+    $("peers").replaceChildren(...(status.peers.length
+      ? status.peers.map((p) => el("div", { className: "peer" }, el("a", { href: p, textContent: p })))
+      : [el("div", { className: "empty", textContent: "no peers" })]));
+    $("error").textContent = "";
+    if ($("addr").value) lookup();
+  } catch (e) {
+    $("error").textContent = "node unreachable";
+  }
+}
+
+$("mine").onclick = async () => {
+  const btn = $("mine");
+  btn.disabled = true; btn.textContent = "Mining…";
+  try { await fetch("/mine", { method: "POST" }); } finally {
+    btn.disabled = false; btn.textContent = "Mine a block";
+    refresh();
+  }
+};
+$("addr").addEventListener("change", lookup);
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

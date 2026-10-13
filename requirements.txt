@@ -1,0 +1,4 @@
+pytest
+ecdsa
+flask
+requests
